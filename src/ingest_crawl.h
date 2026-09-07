@@ -53,11 +53,12 @@ struct LangEntry
 
 // Order does not matter (linear scan); kept grouped by language for readability.
 // The extent is EXACT, not headroom: it was 32 with 32 rows, .toml made it 33, .pyi made it 34 and the
-// .yml/.yaml pair made it 36, and the .php/.phtml/.lua trio made it 40. Sizing it to the row count is what makes
+// .yml/.yaml pair made it 36, the .php/.phtml/.lua trio made it 40 and the .ex/.exs pair made it 42. Sizing
+// it to the row count is what makes
 // `std::array<bool, kLangTable.size()> present` (the grammar-prewarm set,
 // below) exact too, and it turns "added a row and forgot the extent" into a compile error rather than a
 // silent drop.
-constexpr std::array<LangEntry, 40> kLangTable = {{
+constexpr std::array<LangEntry, 42> kLangTable = {{
     { ".cpp",  Lang::Cpp,        &tree_sitter_cpp,        "cpp"        },
     { ".cc",   Lang::Cpp,        &tree_sitter_cpp,        "cpp"        },
     { ".cxx",  Lang::Cpp,        &tree_sitter_cpp,        "cpp"        },
@@ -148,6 +149,13 @@ constexpr std::array<LangEntry, 40> kLangTable = {{
     // Lua: no classes, no imports. The five function-definition spellings and the one call node are the
     // whole extractable structure (queries/lua/tags.scm states the metatable/dynamic-dispatch floor).
     { ".lua",  Lang::Lua,        &tree_sitter_lua,        "lua"        },   // Lua — function/method defs (5 shapes) + calls
+    // Elixir: BOTH extensions are first-class and neither is a "script" tier. `.exs` is what every
+    // ExUnit test file, every `mix run` script and `config/*.exs` uses — excluding it would make a
+    // Phoenix app's entire test suite invisible — and it is the SAME language under the SAME grammar,
+    // so it is one row shape, not a tier. (What IS invisible in an ExUnit file is disclosed in
+    // queries/elixir/tags.scm: `test "…" do` is a macro call, not a def.)
+    { ".ex",   Lang::Elixir,     &tree_sitter_elixir,     "elixir"     },   // Elixir — defmodule/def/defmacro + local & remote calls
+    { ".exs",  Lang::Elixir,     &tree_sitter_elixir,     "elixir"     },   // Elixir script/test — same grammar, same query
     { ".md",   Lang::Markdown,   &tree_sitter_markdown,   ""           },   // Markdown DOC tier — headings/sections via extractMarkdown()'s custom tree walk; NO tags.scm (query stays "")
     { ".markdown", Lang::Markdown, &tree_sitter_markdown, ""           },   // sibling extension, same walk — scope disclosed: .md/.markdown only
 }};
@@ -236,6 +244,25 @@ SymKind defKind( std::string_view tail ) noexcept
     if( tail == "module" )
     {
         return SymKind::Other;
+    }
+    // The four Elixir-only capture names. Every one is GATED (ingest_names.h::elixirDefCaptureDropped):
+    // in tree-sitter-elixir a definition and a call are the same node, so the query can only describe the
+    // shape and the keyword test has to happen here-side. See queries/elixir/tags.scm's header.
+    if( tail == "exmod" )          // `defmodule Foo.Bar do` — Elixir's only named container of functions
+    {
+        return SymKind::Class;
+    }
+    if( tail == "exproto" )        // `defprotocol Foo do` — a named set of callbacks implemented elsewhere
+    {
+        return SymKind::Interface;
+    }
+    if( tail == "exdef" )          // def / defp / defdelegate / defn / defnp
+    {
+        return SymKind::Function;
+    }
+    if( tail == "exmacro" )        // defmacro / defmacrop / defguard / defguardp — callable, expanded at compile time
+    {
+        return SymKind::Macro;
     }
     if( tail == "macro" )
     {

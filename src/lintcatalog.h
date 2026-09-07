@@ -48,7 +48,7 @@ namespace rw::lintcatalog
 // The catalog's language vocabulary is exactly the token set --lint-rules' own `language:` field
 // already accepts (lintrules.h::langFromToken) — one language spelling for the whole lint subsystem,
 // so a catalog row's lang= list is round-trippable straight into a user rule's language: field.
-inline constexpr std::array<Lang, 15> kCatalogLangs = { {
+inline constexpr std::array<Lang, 16> kCatalogLangs = { {
     Lang::Cpp, Lang::C, Lang::ObjC, Lang::Python, Lang::TypeScript, Lang::JavaScript,
     Lang::Go, Lang::Rust, Lang::Swift, Lang::Java, Lang::CSharp, Lang::Ruby, Lang::Bash,
     // Php/Lua join the vocabulary, but ONLY the language-agnostic naming family (kAllCatalogLangs)
@@ -56,7 +56,11 @@ inline constexpr std::array<Lang, 15> kCatalogLangs = { {
     // of those kinds exists in either grammar, so their masks are unchanged by this append. What the two
     // entries buy is the round-trip — `language: php` in a user AST rule now resolves, and a catalog row
     // that claims to cover php/lua is backed by langOfPath knowing .php/.lua (lintrules.h).
-    Lang::Php, Lang::Lua,
+    // Elixir joins on the same terms and for the same one benefit: `language: elixir` in a user AST rule
+    // now resolves and langOfPath knows .ex/.exs. Its grammar spells none of the node kinds the AST-shaped
+    // built-ins name (it has no statement node types at all — see queries/elixir/tags.scm), so every
+    // built-in mask is unchanged by this append and only the language-agnostic naming family fires.
+    Lang::Php, Lang::Lua, Lang::Elixir,
 } };
 
 // Lang→bitmask itself is rw::langBit (src/clones.h) — reused, not redefined.
