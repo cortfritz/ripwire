@@ -1042,6 +1042,8 @@ inline bool fieldCaptureKept( Lang lang, TSNode nameNode, TSNode roleNode, std::
 }
 
 // forward declarations for dropGatedCapture below — the helpers live after nodeTextOf's section.
+inline bool elixirDefCaptureDropped( std::string_view defCapSv, TSNode roleNode, std::string_view src ) noexcept;
+inline bool elixirIsDefinitionHead( TSNode callNode, std::string_view src ) noexcept;
 inline bool isCjsExportTarget( TSNode nameNode, std::string_view src ) noexcept;
 inline bool isPrototypeMemberTarget( TSNode nameNode, std::string_view src ) noexcept;
 inline bool isPyEnumMemberTarget( TSNode nameNode, std::string_view src ) noexcept;
@@ -1157,6 +1159,14 @@ inline bool dropGatedCapture( std::string_view defCapSv, Lang lang, std::string_
     if( defCapSv == "definition.constant" )
     {
         return dropConstantCapture( lang, name, nameNode, roleNode, src );
+    }
+    // The four Elixir capture classes share ONE arm and ONE helper: the drop decision is the same test
+    // (read the outer call's target keyword) for all of them, and only the accepted keyword SET differs.
+    // Tested by prefix so the three non-Elixir languages whose capture names also begin "definition.ex…"
+    // cannot exist — there are none, and any future one would have to pick a different tail anyway.
+    if( defCapSv.size() > 13 && defCapSv.substr( 0, 13 ) == "definition.ex" )
+    {
+        return elixirDefCaptureDropped( defCapSv, roleNode, src );
     }
     if( defCapSv == "definition.field" )
     {
@@ -1297,6 +1307,150 @@ inline bool isPyEnumMemberTarget( TSNode nameNode, std::string_view src ) noexce
     }
     return false;
 }
+
+// ══ Elixir capture gates ════════════════════════════════════════════════════════════════════════════
+// tree-sitter-elixir has 45 named node types and not one of them is a definition: `defmodule Foo do`,
+// `def greet(n) do`, `alias Foo.Bar` and `greet("x")` are all `(call target: (identifier) …)`, separated
+// ONLY by the target identifier's text. queries/elixir/tags.scm therefore describes the SHAPE and these
+// three helpers make each shape mean what its capture name says — the same division of labour
+// isCjsExportTarget / isPyEnumMemberTarget / yamlKeyCaptureDropped already use, and for the same reason
+// stated at isCppCastKeyword: a `#any-of?` predicate in a tags query is a SILENT no-op here.
+
+// The `target:` field of the call a capture sits under, as text. Every Elixir gate below is one string
+// compare against this, so the walk lives here once. Empty when the node is not a call with an
+// identifier target — which drops the capture in every caller, the safe direction.
+inline std::string_view elixirCallKeyword( TSNode callNode, std::string_view src ) noexcept
+{
+    if( ts_node_is_null( callNode ) || std::strcmp( ts_node_type( callNode ), "call" ) != 0 )
+    {
+        return {};
+    }
+    const TSNode target = ts_node_child_by_field_name( callNode, "target", 6 );
+    if( ts_node_is_null( target ) || std::strcmp( ts_node_type( target ), "identifier" ) != 0 )
+    {
+        return {};
+    }
+    return nodeTextOf( target, src );
+}
+
+// The CALLABLE def keywords — the ones whose head is written as a call (`def greet(n)`), as opposed to
+// defmodule/defprotocol, whose argument is an alias. Shared by the exdef/exmacro gates and by
+// elixirIsDefinitionHead below, so the two can never disagree about what a definition head is.
+inline bool elixirCallableDefKeyword( std::string_view kw ) noexcept
+{
+    return kw == "def" || kw == "defp" || kw == "defdelegate" || kw == "defn" || kw == "defnp"
+        || kw == "defmacro" || kw == "defmacrop" || kw == "defguard" || kw == "defguardp";
+}
+
+// The def-family keyword sets, one per capture class. `defimpl` is deliberately in NONE of them: it
+// defines the module `Foo.Bar` from `defimpl Foo, for: Bar`, a name that appears nowhere in the source,
+// and naming that container `Foo` would put a wrong name in the map. Its `def`s are still captured (they
+// are ordinary defs inside it), so only the synthetic container name is absent — a floor, not a guess.
+// queries/elixir/tags.scm states it; test/elixircheck.sh asserts it.
+inline bool elixirDefCaptureDropped( std::string_view defCapSv, TSNode roleNode, std::string_view src ) noexcept
+{
+    const std::string_view kw = elixirCallKeyword( roleNode, src );
+    if( kw.empty() )
+    {
+        return true;
+    }
+    if( defCapSv == "definition.exmod" )
+    {
+        return kw != "defmodule";
+    }
+    if( defCapSv == "definition.exproto" )
+    {
+        return kw != "defprotocol";
+    }
+    if( defCapSv == "definition.exdef" )
+    {
+        return !( kw == "def" || kw == "defp" || kw == "defdelegate" || kw == "defn" || kw == "defnp" );
+    }
+    if( defCapSv == "definition.exmacro" )
+    {
+        return !( kw == "defmacro" || kw == "defmacrop" || kw == "defguard" || kw == "defguardp" );
+    }
+    static_assert( true, "the two sets above partition elixirCallableDefKeyword — see its note" );
+    return true;   // an unknown "definition.ex…" tail: drop rather than mint an unclassified symbol
+}
+
+// `alias Foo.Bar` / `import Foo` / `require Logger` / `use GenServer` — the SAME shape as `defmodule Foo`
+// minus the do_block, so the @reference.import pattern matches both and this keeps only the four real
+// directives. These are NAME edges (role="import" use-sites), never file-include edges: an Elixir module
+// is not a file, so Elixir stays out of lintrules.h's dependencyCapable set. See the query's header.
+inline bool elixirImportDirectiveKept( TSNode roleNode, std::string_view src ) noexcept
+{
+    const std::string_view kw = elixirCallKeyword( roleNode, src );
+    return kw == "alias" || kw == "import" || kw == "require" || kw == "use";
+}
+
+// A definition's HEAD is a call node, and it is not a call. `def greet(name) do … end` parses as
+// `(call target: def (arguments (call target: greet …)))` — that inner `greet(name)` is the thing being
+// DEFINED, and the plain reference pattern names it, so every def minted a reference to itself. Self-edges
+// are dropped downstream, which hid this everywhere EXCEPT where two defs share a name: the fixture's
+// protocol callback `def render(term)` and its `defimpl` clause resolved each other's heads and produced a
+// phantom `render → render` edge. MEASURED on test/elixirfix before this guard existed, which is why it is
+// a guard and not a comment.
+//
+// Only the FIRST argument is a head: in `def greet(name) when is_name(name)` the `when` right-hand side is
+// a REAL call to a guard and must survive, so the anchor test below is the whole correctness argument.
+inline bool elixirIsDefinitionHead( TSNode callNode, std::string_view src ) noexcept
+{
+    TSNode node   = callNode;
+    TSNode parent = ts_node_parent( node );
+    // A guarded head sits under `binary_operator` as its `left`; the `when` right-hand side does not.
+    if( !ts_node_is_null( parent ) && std::strcmp( ts_node_type( parent ), "binary_operator" ) == 0 )
+    {
+        const TSNode left = ts_node_child_by_field_name( parent, "left", 4 );
+        if( ts_node_is_null( left ) || !ts_node_eq( left, node ) )
+        {
+            return false;
+        }
+        node   = parent;
+        parent = ts_node_parent( node );
+    }
+    if( ts_node_is_null( parent ) || std::strcmp( ts_node_type( parent ), "arguments" ) != 0 )
+    {
+        return false;
+    }
+    if( ts_node_named_child_count( parent ) == 0 || !ts_node_eq( ts_node_named_child( parent, 0 ), node ) )
+    {
+        return false;   // an argument, not the head — `def foo(bar())` keeps its call to bar
+    }
+    return elixirCallableDefKeyword( elixirCallKeyword( ts_node_parent( parent ), src ) );
+}
+
+// A local call whose callee is a def-family keyword or a special form is not a call to anything: in this
+// grammar `def greet(n) do … end` IS a `(call target: (identifier))`, so the ordinary call pattern names
+// `def` itself. Skipped at capture time exactly as a C++ cast keyword is (isCppCastKeyword) — VALID INPUT,
+// not a corrupt invariant, so no VERIFY and no DEGRADED_PATH_ALERT. Without this every Elixir file mints a
+// reference to `def`/`defmodule`/`if`/`case`, and `--callers=def` becomes the busiest node in the map.
+// The list is the def family (which the def gates above already consumed), the directives
+// (elixirImportDirectiveKept consumed those), and Kernel's special forms — the ones that are syntax in
+// every other language this tool indexes and would be silently counted as calls only here.
+inline bool elixirNonCallKeyword( std::string_view name ) noexcept
+{
+    static constexpr std::string_view kKeywords[] = {
+        // definition family
+        "def", "defp", "defdelegate", "defn", "defnp",
+        "defmacro", "defmacrop", "defguard", "defguardp",
+        "defmodule", "defprotocol", "defimpl", "defstruct", "defexception", "defoverridable",
+        // directives
+        "alias", "import", "require", "use",
+        // special forms / control flow — syntax elsewhere, macro calls here
+        "case", "cond", "for", "if", "unless", "with", "try", "receive", "after", "rescue", "catch",
+        "quote", "unquote", "unquote_splicing", "super", "raise", "reraise", "throw", "fn", "else",
+    };
+    for( const std::string_view kw : kKeywords )
+    {
+        if( kw == name )
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 }   // namespace — ingest_names.h section of ingest.cpp
 
 }   // namespace rw

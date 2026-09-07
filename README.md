@@ -16,8 +16,8 @@ deterministic call graph — what to touch, what it breaks, which tests to run �
 around and reading whole files.
 
 **Languages:** Rust · C++ · Objective-C/C++ · C · Metal · CUDA · Python · Go · Swift · TypeScript ·
-JavaScript · Java · Ruby · PHP · Lua · Bash · C# · JSON · TOML · YAML · Markdown — [twenty-one
-vendored grammars](#languages), and adding another is a vendored tree-sitter grammar plus one row in a
+JavaScript · Java · Ruby · PHP · Lua · Elixir · Bash · C# · JSON · TOML · YAML · Markdown —
+[twenty-two vendored grammars](#languages), and adding another is a vendored tree-sitter grammar plus one row in a
 declarative table.
 
 ### See the map — not just the numbers
@@ -633,8 +633,8 @@ cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release && cmake --build build-re
 cmake -S . -B build && cmake --build build -j
 ```
 
-Parses **C/C++, Objective-C/C++, Python, TypeScript, JavaScript, Java, Ruby, PHP, Lua, Bash, Go,
-Rust, Swift, C#** — plus JSON/TOML/YAML config keys, markdown sections, Metal, and CUDA (`<<<>>>`
+Parses **C/C++, Objective-C/C++, Python, TypeScript, JavaScript, Java, Ruby, PHP, Lua, Elixir, Bash,
+Go, Rust, Swift, C#** — plus JSON/TOML/YAML config keys, markdown sections, Metal, and CUDA (`<<<>>>`
 launches are call edges).
 
 To put it on `PATH`, `./install.sh` builds and atomically installs the binary plus the matching
@@ -1516,7 +1516,7 @@ wrong, and it has. These are the results that say so, all in-tree, all published
 
 ### In the tests
 
-`test/regression.sh` names **542 gate scripts** and is the authoritative list;
+`test/regression.sh` names **543 gate scripts** and is the authoritative list;
 `python3 test/pargates.py . ./build/ripwire -j 6` runs the same set in parallel. On top of them sit the
 contracts that do not fit a unit test: two runs byte-identical, warm output identical to cold, output
 that pipes clean through `xmllint --noout`, a sanitizer build with `-fno-sanitize-recover=all`, and a
@@ -1679,13 +1679,27 @@ imports. Dynamic dispatch — `$fn()`, `call_user_func`, `__call` — names its 
 a stated floor, not a silence), **Lua** (all five spellings that define a function, including the
 `M.f = function` and table-constructor forms; `function M:f()` is a method. Metatable inheritance is
 a runtime call with no syntax to read, so a Lua corpus reports no inheritance edges — stated, not
-implied), Bash, Go, Rust, Swift, C#, JSON + TOML + YAML (config keys — a
+implied), **Elixir** (`.ex` *and* `.exs`, so a project's whole ExUnit suite is indexed too —
+`defmodule` is a `cls`, `defprotocol` an `iface`, `def`/`defp` are `fn`, `defmacro`/`defguard` are
+`macro`, and `alias`/`import`/`require`/`use` are role=`import` use-sites. Elixir's grammar has no
+definition node type at all — `defmodule Foo do` and `foo()` are the *same* node — so what a
+definition *is* had to be decided in C++ rather than in a query predicate. Two floors are stated
+rather than implied: a `def` created by a macro expansion (Ecto's `schema`, Phoenix's `router`,
+ExUnit's `test "…" do`) is invisible to a tool that reads source text, and cyclomatic complexity
+reads 1 for every Elixir function because `if`/`case`/`cond`/`with` are macro calls, not statements.
+The macro floor is MEASURED (2026-09-07), not gestured at, and it is not uniform — on a 2 952-file Phoenix + Ecto
++ Oban + LiveView app it is **8.7 % of `lib/`** (24 714 captured defs against a 2 344 floor that is
+almost entirely Ecto `field`/`belongs_to` rows) but **83 % of `test/`** (3 026 captured defs against
+15 184 `test "…"`/`describe "…"` macro calls). Read that as: application code is mapped, an ExUnit
+suite mostly is not. Recall against the shapes the query *does* target is 97.8 % corpus-wide and
+100 % on hand-checked modules, and 2 924 real-world Elixir files parsed with zero ERROR nodes),
+Bash, Go, Rust, Swift, C#, JSON + TOML + YAML (config keys — a
 `[tool.ruff.lint]` table is one symbol under its full dotted name, and
 `pyproject.toml`/`Cargo.toml`/CI workflows become greppable), and **Markdown** (`.md`/`.markdown` —
 the DOC tier: every heading, ATX or setext, is a section symbol whose span runs to the next
 same-or-higher heading, so `--for` ranks the section, `--expand` serves the section body, `--recall`
 answers section-granular, and links/`backtick` mentions are doc→doc and doc→code edges).
-Twenty-one tree-sitter grammars, all vendored.
+Twenty-two tree-sitter grammars, all vendored.
 
 Want another language? The pipeline is language-agnostic past the parse: a new language is a
 vendored tree-sitter grammar, its query file, and one row in the declarative

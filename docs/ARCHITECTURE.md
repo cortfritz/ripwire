@@ -115,18 +115,42 @@ dispatched as work items.
 Languages: C++, C, Objective-C/Objective-C++, Metal (parsed with the C++ grammar), CUDA (parsed
 with the vendored tree-sitter-cuda grammar, a generated superset of tree-sitter-cpp), Python,
 TypeScript, JavaScript, Java, Ruby, PHP (the `php/` sub-grammar, so a `.php`/`.phtml` file whose
-first byte is markup still indexes), Lua, Bash, Go, Rust, Swift, C#, plus JSON, TOML and YAML
-configuration keys.
+first byte is markup still indexes), Lua, Elixir (`.ex` and `.exs` alike — an ExUnit suite is not a
+second-class tier), Bash, Go, Rust, Swift, C#, plus JSON, TOML and YAML configuration keys.
 
-Two of those carry a stated floor rather than a silence. **PHP**: dynamic dispatch — `$fn()`,
+Three of those carry a stated floor rather than a silence. **PHP**: dynamic dispatch — `$fn()`,
 `$obj->$name()`, `call_user_func`, `__call` magic, `new $class` — names its callee at run time, so
 those sites produce no edge; a `use` directive is captured for `--uses`/`--deps` but never narrows a
 call, because PSR-4 maps a namespace onto a directory through a `composer.json` block this tool does
 not read. **Lua**: inheritance *is* `setmetatable( D, { __index = B } )`, an ordinary runtime call
 over an ordinary table, so a Lua corpus correctly reports no inheritance edges at all, and `require`
 is a plain function call rather than an import directive (as in Ruby), so a `.lua` file is never a
-node in the `--deps`/`--arch` graph. Both floors are asserted from the outside by
-`test/phpcheck.sh` and `test/luacheck.sh` so they stay decisions rather than drift.
+node in the `--deps`/`--arch` graph. **Elixir**: the grammar is homoiconic and has no definition node
+type — `defmodule Foo do`, `def greet(n) do`, `alias Foo.Bar` and `greet("x")` are all
+`(call target: (identifier) …)`, separated only by the target's text. Upstream's own tags query settles
+that with `#any-of?` predicates, which are a silent no-op in the tags pass (predicates are wired into
+`--match`/`--lint` only), so the query here describes the *shape* and four Elixir-only capture classes
+are gated in `ingest_names.h` by reading the keyword. Three floors follow and are stated: a `def`
+produced by a macro expansion (`schema`, `router`, `test "…" do`) cannot be read out of source text;
+`alias`/`import`/`require`/`use` name MODULES, and a module is not a file, so an `.ex` file is never a
+node in the `--deps`/`--arch` graph (the directives are still role=`import` use-sites for `--uses`);
+and `if`/`case`/`cond`/`with` are macro calls rather than statement node types, so cyclomatic
+complexity is a floor of 1 and Elixir is absent from `evCountedLang`. All three floors are asserted
+from the outside by `test/phpcheck.sh`, `test/luacheck.sh` and `test/elixircheck.sh` so they stay
+decisions rather than drift.
+
+A fourth Elixir decision is structural rather than a floor, and it is the one that had to be got
+right: a struct field read `user.id` is the SAME node as the remote call `Repo.get(x)` —
+`(call target: (dot right: (identifier)))` — separated only by the LEFT child, an `alias` (a module)
+versus a plain `identifier` (a variable). The remote-call pattern therefore anchors `left: (alias)`.
+Without it every field read whose name matched any def in the corpus minted a call edge: measured
+2026-09-07 on a 2 952-file Phoenix + Ecto + Oban app, 25–53 % of dot-shaped call edges per subtree were field reads,
+and the top-ranked symbol of the whole 41 479-symbol map was a six-line socket callback `id/1` carrying
+`in="2433"` with zero explicit callers — ranked there by 9 640 `.id` reads. That is a wrong number, not
+a disclosable floor, which is why the anchor is not optional. Its cost is a call through a variable
+holding a module (`mod.fun(args)`), which is dynamic dispatch and already named nothing. Adding the
+anchor removed 4 544 edges and 5 572 unresolved references on that corpus while leaving the symbol
+count byte-identical, and `test/elixircheck.sh` §5b pins it with a mutation control in §9d.
 
 The three config lanes are *data*, not code: they emit `t="sec"` symbols and **zero call edges**, and
 `langCompatible` keeps a config key from ever resolving a same-spelled code symbol. They differ in

@@ -65,9 +65,17 @@ is why the sizes are what they are — `parser.c` is one big static table, not h
 | `deps/swift` | tree-sitter-swift | Alex Pinkus | MIT | `31d17fe7e818a2048c808b5c6fdc2dc792f4f5b5` | https://github.com/alex-pinkus/tree-sitter-swift | 20 MB |
 | `deps/php` | tree-sitter-php (v0.24.2; the `php/` sub-grammar only) | Josh Vera, GitHub | MIT | `5b5627faaa290d89eb3d01b9bf47c3bb9e797dea` | https://github.com/tree-sitter/tree-sitter-php | 6.9 MB |
 | `deps/lua` | tree-sitter-lua (v0.5.0) | Munif Tanjim | MIT | `10fe0054734eec83049514ea2e718b2a56acd0c9` | https://github.com/tree-sitter-grammars/tree-sitter-lua | 392 KB |
+| `deps/elixir` | tree-sitter-elixir (v0.3.5) | The Elixir Team; generated files Max Brunsfeld | Apache-2.0 (generated `src/parser.c` + `src/tree_sitter/`: MIT — see NOTICE) | `e2d9e6e0e76b0c436fa48a0b8c32a031d0cbdf49` | https://github.com/elixir-lang/tree-sitter-elixir | 12 MB |
 | `deps/doctest` | doctest (v2.4.12) | Viktor Kirilov | MIT | `1da23a3e8119ec5cce4f9388e91b065e20bf06f5` | https://github.com/doctest/doctest | 0.7 MB |
 
 Notes:
+
+- `deps/elixir` is the only grammar whose repository license is Apache-2.0 rather than MIT, so its
+  upstream `NOTICE` is vendored alongside its `LICENSE` (Apache-2.0 §4(d) requires redistributing it).
+  That `NOTICE` also splits the tree: everything under `src/` except the hand-written scanner — i.e.
+  the generated `parser.c` and the `tree_sitter/` headers, which is most of what is vendored here — is
+  MIT (Max Brunsfeld, the tree-sitter-cli output), and the scanner plus the grammar are Apache-2.0
+  (The Elixir Team). Both files ship, so both notices apply; the table names the repository license.
 
 - `deps/tree_sitter` keeps upstream's own `CMakeLists.txt` (the build `add_subdirectory`s it),
   `lib/src`, `lib/include` and `lib/tree-sitter.pc.in`. Its `lib/src/unicode/` is a subset of ICU

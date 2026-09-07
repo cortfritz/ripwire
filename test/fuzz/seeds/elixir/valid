@@ -1,0 +1,41 @@
+defmodule Repo.Greeter do
+  @moduledoc "seed corpus entry — every capture shape queries/elixir/tags.scm names"
+  alias Repo.Formatter
+  import Repo.Util, only: [trim: 1]
+  require Logger
+
+  defstruct [:name, :salutation]
+
+  @default "hello"
+
+  defguard is_name(n) when is_binary(n) and n != ""
+
+  def greet(name) when is_name(name) do
+    name
+    |> trim()
+    |> Formatter.title()
+    |> emit()
+  end
+
+  def greet(_), do: @default
+
+  defp emit(text) do
+    case String.length(text) do
+      0 -> :empty
+      n when n > 8 -> {:long, n}
+      _ -> {:ok, text}
+    end
+  end
+
+  defmacro trace(expr) do
+    quote do: Logger.debug(unquote(expr))
+  end
+end
+
+defprotocol Repo.Render do
+  def render(term)
+end
+
+defimpl Repo.Render, for: Repo.Greeter do
+  def render(%Repo.Greeter{name: n}), do: n
+end

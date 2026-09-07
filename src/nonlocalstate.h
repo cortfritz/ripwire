@@ -222,12 +222,12 @@ inline bool isAnalyzedLang( Lang l ) noexcept
 // the confident, wrong zero this table exists to prevent. The emission order is this table's order, which
 // makes it deterministic.
 struct UnanalyzedLang { Lang lang; std::string_view name; };
-inline constexpr std::array<UnanalyzedLang, 12> kUnanalyzedLangs = { {
+inline constexpr std::array<UnanalyzedLang, 13> kUnanalyzedLangs = { {
     { Lang::C, "c" }, { Lang::Go, "go" }, { Lang::Rust, "rust" },
     { Lang::JavaScript, "javascript" }, { Lang::TypeScript, "typescript" },
     { Lang::Java, "java" }, { Lang::CSharp, "csharp" }, { Lang::Swift, "swift" },
     { Lang::Ruby, "ruby" }, { Lang::Bash, "bash" },
-    { Lang::Php, "php" }, { Lang::Lua, "lua" } } };
+    { Lang::Php, "php" }, { Lang::Lua, "lua" }, { Lang::Elixir, "elixir" } } };
 
 // The immutability keywords of the covered families. A declaration prefix carrying any of these is not
 // mutable state. Conservative on purpose: a type argument that merely MENTIONS const (`vector<const T*> v`)
