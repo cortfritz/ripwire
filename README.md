@@ -1686,7 +1686,13 @@ definition node type at all — `defmodule Foo do` and `foo()` are the *same* no
 definition *is* had to be decided in C++ rather than in a query predicate. Two floors are stated
 rather than implied: a `def` created by a macro expansion (Ecto's `schema`, Phoenix's `router`,
 ExUnit's `test "…" do`) is invisible to a tool that reads source text, and cyclomatic complexity
-reads 1 for every Elixir function because `if`/`case`/`cond`/`with` are macro calls, not statements),
+reads 1 for every Elixir function because `if`/`case`/`cond`/`with` are macro calls, not statements.
+The macro floor is MEASURED (2026-09-07), not gestured at, and it is not uniform — on a 2 952-file Phoenix + Ecto
++ Oban + LiveView app it is **8.7 % of `lib/`** (24 714 captured defs against a 2 344 floor that is
+almost entirely Ecto `field`/`belongs_to` rows) but **83 % of `test/`** (3 026 captured defs against
+15 184 `test "…"`/`describe "…"` macro calls). Read that as: application code is mapped, an ExUnit
+suite mostly is not. Recall against the shapes the query *does* target is 97.8 % corpus-wide and
+100 % on hand-checked modules, and 2 924 real-world Elixir files parsed with zero ERROR nodes),
 Bash, Go, Rust, Swift, C#, JSON + TOML + YAML (config keys — a
 `[tool.ruff.lint]` table is one symbol under its full dotted name, and
 `pyproject.toml`/`Cargo.toml`/CI workflows become greppable), and **Markdown** (`.md`/`.markdown` —

@@ -139,6 +139,19 @@ complexity is a floor of 1 and Elixir is absent from `evCountedLang`. All three 
 from the outside by `test/phpcheck.sh`, `test/luacheck.sh` and `test/elixircheck.sh` so they stay
 decisions rather than drift.
 
+A fourth Elixir decision is structural rather than a floor, and it is the one that had to be got
+right: a struct field read `user.id` is the SAME node as the remote call `Repo.get(x)` —
+`(call target: (dot right: (identifier)))` — separated only by the LEFT child, an `alias` (a module)
+versus a plain `identifier` (a variable). The remote-call pattern therefore anchors `left: (alias)`.
+Without it every field read whose name matched any def in the corpus minted a call edge: measured
+2026-09-07 on a 2 952-file Phoenix + Ecto + Oban app, 25–53 % of dot-shaped call edges per subtree were field reads,
+and the top-ranked symbol of the whole 41 479-symbol map was a six-line socket callback `id/1` carrying
+`in="2433"` with zero explicit callers — ranked there by 9 640 `.id` reads. That is a wrong number, not
+a disclosable floor, which is why the anchor is not optional. Its cost is a call through a variable
+holding a module (`mod.fun(args)`), which is dynamic dispatch and already named nothing. Adding the
+anchor removed 4 544 edges and 5 572 unresolved references on that corpus while leaving the symbol
+count byte-identical, and `test/elixircheck.sh` §5b pins it with a mutation control in §9d.
+
 The three config lanes are *data*, not code: they emit `t="sec"` symbols and **zero call edges**, and
 `langCompatible` keeps a config key from ever resolving a same-spelled code symbol. They differ in
 where the navigable unit sits. JSON cuts at document depth — top-level and second-level object

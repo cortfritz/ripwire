@@ -89,6 +89,7 @@ presence lib/repo/greeter.ex   'import Repo.Util'                   'an import d
 presence lib/repo/greeter.ex   'require Logger'                     'a require directive'
 presence lib/repo/greeter.ex   'defstruct'                          'a defstruct (deliberately not captured)'
 presence lib/repo/greeter.ex   '|> trim()'                          'a pipe into a call'
+presence lib/repo/greeter.ex   'record.title'                       'a struct FIELD READ whose name is a real def elsewhere'
 presence lib/repo/render.ex    'defprotocol Repo.Render do'         'a defprotocol'
 presence lib/repo/render.ex    'defimpl Repo.Render, for:'          'the defimpl whose container floor §3 asserts'
 presence test/greeter_test.exs 'test "it greets" do'                'the ExUnit macro call the floor §3 asserts'
@@ -138,9 +139,9 @@ assert_true(){ [ "$( ask "$TMP/parsed.json" "$1" )" = "True" ] && ok "$2" || no 
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo
-echo "=== 1. STRUCTURE: 5 files (.ex AND .exs), 17 symbols, 9 edges ==="
+echo "=== 1. STRUCTURE: 5 files (.ex AND .exs), 18 symbols, 9 edges ==="
 # ═══════════════════════════════════════════════════════════════════════════
-grep -q 'files=5 symbols=17' "$MAP_OUT" && ok "header: files=5 symbols=17" || no "header: expected files=5 symbols=17: $( grep -o 'files=[0-9]* symbols=[0-9]*' "$MAP_OUT" )"
+grep -q 'files=5 symbols=18' "$MAP_OUT" && ok "header: files=5 symbols=18" || no "header: expected files=5 symbols=18: $( grep -o 'files=[0-9]* symbols=[0-9]*' "$MAP_OUT" )"
 grep -q 'edges=9' "$MAP_OUT"            && ok "header: edges=9"            || no "header: expected edges=9: $( grep -o 'edges=[0-9]*' "$MAP_OUT" )"
 grep -q 'ambiguous=0' "$MAP_OUT"        && ok "header: ambiguous=0"        || no "header: expected ambiguous=0: $( grep -o 'ambiguous=[0-9]*' "$MAP_OUT" )"
 grep -q 'unresolved=0' "$MAP_OUT"       && ok "header: unresolved=0"       || no "header: expected unresolved=0: $( grep -o 'unresolved=[0-9]*' "$MAP_OUT" )"
@@ -206,6 +207,23 @@ assert_true 'edge("helper", "default")' '.exs file calls into a .ex module'
 assert_true 'edge("GreeterTest", "greet")' 'a call inside `test "…" do` attributes to the module symbol'
 # Logger.debug / String.upcase resolve to nothing in-corpus and drop — which is why unresolved=0.
 assert_true 'not name("debug")'  'an out-of-corpus remote callee (Logger.debug) mints no symbol'
+
+# ═══════════════════════════════════════════════════════════════════════════
+echo
+echo "=== 5b. A STRUCT FIELD READ IS NOT A CALL (the left-of-the-dot discrimination) ==="
+# ═══════════════════════════════════════════════════════════════════════════
+# `record.title` and `Formatter.title(text)` are the SAME node shape — (call target: (dot right:
+# (identifier))) — and the ONLY structural thing separating them is the left child: an `alias` names a
+# module, a plain `identifier` names a variable. A query that does not discriminate there mints a call
+# edge for every field read whose name happens to match some def in the corpus.
+#
+# MEASURED on ~/Developer/io/augur (2951 first-party .ex/.exs, Phoenix+Ecto+Oban) before this arm existed:
+# 25-53% of all dot-shaped call edges per subtree came from variable-left dots, and the #1 ranked symbol
+# of the whole 41471-symbol map was AugurWeb.ExternalSocket.id/1 on in="2433" — a 6-line socket callback
+# with ZERO explicit callers, ranked there by 9640 `.id` field reads. A wrong edge, not a disclosed floor.
+assert_true 'not edge("label", "title")' 'a field read `record.title` mints NO call edge to Formatter.title'
+# ...and the real remote call to the SAME name must survive, so this is a discrimination, not a blanket drop.
+assert_true 'edge("greet", "title")'     'the real remote call `Formatter.title()` to that same name SURVIVES'
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo
@@ -285,6 +303,16 @@ parse "$TMP/mut2_map.xml" >"$TMP/mut2.json"
 [ "$( ask "$TMP/mut2.json" 'has("greeter.ex", "emit", "fn")' )" = "False" ] \
     && ok '9c: dropping the `defp` keyword drops the symbol (the keyword gate is real)' \
     || no '9c: `emit` was still a t="fn" symbol without its `defp` keyword — the capture gate is not firing'
+
+# 9d. turn the field READ into a real remote call -> the edge must APPEAR. Without this, arm 5b would
+# pass just as well against a build that had dropped remote-call edges altogether.
+MUT3="$TMP/mut3"; cp -R "$FIX" "$MUT3"
+sed -i.bak 's/    record.title/    Formatter.title(record)/' "$MUT3/lib/repo/greeter.ex" && rm -f "$MUT3/lib/repo/greeter.ex.bak"
+"$BIN" "$MUT3" --no-cache 2>/dev/null >"$TMP/mut3_map.xml"
+parse "$TMP/mut3_map.xml" >"$TMP/mut3.json"
+[ "$( ask "$TMP/mut3.json" 'edge("label", "title")' )" = "True" ] \
+    && ok '9d: rewriting `record.title` as `Formatter.title(record)` DOES mint the edge (arm 5b is real)' \
+    || no '9d: an alias-left remote call did not mint an edge — arm 5b is vacuous, remote calls are broken'
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo

@@ -32,6 +32,15 @@ defmodule Repo.Greeter do
     Formatter.shout(text)
   end
 
+  # A struct FIELD READ, not a call. `record.title` is `(call target: (dot left: (identifier) ...))` —
+  # the SAME node shape as the remote call `Formatter.title(...)` in greet/1 above, separated only by
+  # what sits on the LEFT of the dot: an `alias` names a module, a plain `identifier` names a variable.
+  # `title` is a real def in formatter.ex, so if the query does not discriminate on the left, this field
+  # read mints a phantom `label -> title` call edge. Arm 5b pins that it does not.
+  def label(record) do
+    record.title
+  end
+
   defmacro trace(expr) do
     quote do
       Logger.debug(unquote(expr))

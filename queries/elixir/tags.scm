@@ -31,7 +31,8 @@
 ;   def/defp/defdelegate/defn/defnp → t="fn"
 ;   defmacro/defmacrop/defguard/defguardp → t="macro" (callable, expanded at compile time — the same
 ;                                               honest kind Rust's macro_definition already takes)
-;   f(..) / Mod.f(..) / x |> f    → reference.call
+;   f(..) / Mod.f(..) / x |> f    → reference.call  (Mod.f only when the dot's LEFT is an `alias`, so a
+;                                               field read `user.id` is not mistaken for a call — see below)
 ;   alias/import/require/use Mod  → reference.import (role="import" use-sites, exactly like C++'s
 ;                                               `using ns::name;` — NOT a file-include edge; see below)
 ;
@@ -48,7 +49,11 @@
 ;     `--uses` its role="import" use-sites, which is a name edge and claims to be nothing more.
 ;   - DYNAMIC DISPATCH names nothing: `apply(mod, fun, args)`, `Kernel.apply/3`, a captured function
 ;     `&Mod.fun/1` passed and then called, and protocol dispatch itself (the whole point of a protocol
-;     is that the callee is chosen at run time). None produce an edge.
+;     is that the callee is chosen at run time). None produce an edge. A call through a VARIABLE holding
+;     a module — `mod = Some.Module; mod.fun(args)` — is the same class and is likewise absent, which is
+;     what the `left: (alias)` anchor on the remote-call pattern below gives up. It gives up nothing that
+;     resolved: the callee is not in the text either way. A dot on a call RESULT (`foo().bar`) goes with
+;     it. What the anchor BUYS is that a field read stops pretending to be a call — see that pattern.
 ;   - METAPROGRAMMING. A `def` generated inside `quote do … end` by a macro — Ecto's `schema`, Phoenix's
 ;     `router`, `use ExUnit.Case`'s injected callbacks — exists only after expansion. ripwire reads
 ;     source text, so those defs are invisible. This is Elixir's single largest extraction floor and it
@@ -125,8 +130,20 @@
 
 ; Mod.f(..) — a remote call. The captured name is the final identifier, which is what byName resolves
 ; on; the module half rides the reference.import edges above.
+;
+; `left: (alias)` is LOAD-BEARING, not decoration. A struct/map field read — `user.id`, `socket.assigns`,
+; `record.title` — is the SAME node shape as this remote call, and the ONLY structural thing separating
+; them is the left child: an `alias` is a module name (capitalised), a plain `identifier` is a variable.
+; Without the anchor, EVERY field read whose name matches some def in the corpus mints a call edge.
+; MEASURED 2026-09-07 on a real Phoenix+Ecto+Oban+LiveView app (2952 first-party .ex/.exs, 3519 files
+; indexed): 25-53% of dot-shaped call edges per subtree came from variable-left dots, and the top-ranked
+; symbol of the whole 41479-symbol map was a 6-line socket callback `id/1` with in="2433" and ZERO
+; explicit callers — ranked there by 9640 `.id` field reads. That is a WRONG edge, which the honesty rule
+; forbids, not a floor that could be disclosed. Adding the anchor removed 4544 edges and 5572 unresolved
+; references on that corpus and left the symbol count IDENTICAL at 41479 — it drops references, never defs.
+; The cost is listed under DYNAMIC DISPATCH below: it was already naming nothing.
 (call
-  target: (dot right: (identifier) @name)) @reference.call
+  target: (dot left: (alias) right: (identifier) @name)) @reference.call
 
 ; x |> f — a pipe into a BARE name. `x |> f()` is already the local-call pattern above.
 (binary_operator
