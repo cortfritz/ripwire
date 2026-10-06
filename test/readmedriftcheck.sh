@@ -154,8 +154,22 @@ counts_from() {                      # $1 = file → prints "M P N" (empty field
 # The structural derivation. Sections are markdown headings; a body row is a `|` line that is neither
 # the section's first `|` line (its header) nor a `| --- |` separator. `n` is the surveyed table's
 # LAST column, and each row's names are re-counted so the column cannot drift from what it summarises.
+#
+# THE HEADING MATCH IS SPELLED `/^##?#? /`, NOT `/^#{2,3}[ ]/`. Do not "simplify" it back to an interval.
+# mawk 1.3.4 20240123 — the DEFAULT awk on ubuntu-24.04, which is what all four Linux legs of ci.yml run —
+# does not match `### ` with that interval, only `## `. macOS awk 20200816 matches both, so the bug is
+# invisible on the dev machine. Minimal repro:
+#     printf '## two\n### three\n' | awk '/^#{2,3}[ ]/ { print "MATCH: " $0 }'
+#       macOS awk : MATCH: ## two   MATCH: ### three
+#       mawk      : MATCH: ## two                        <-- ### three MISSED
+# docs/LINEAGE.md's §3a Folded and §3b Surveyed are `###` headings, so under mawk the scanner never
+# entered them: folded and surveyed derived 0 instead of 36 and 231, reddening E1/E2/E5 and — worse —
+# making E6/E7 report themselves VACUOUS, since a mutation control that sees no rows cannot catch a
+# planted name. classic/modern stayed correct because they are `##`, which is exactly why the failure
+# read as a content drift rather than a portability bug. Found by running the suite in an ubuntu-24.04
+# container on 2026-09-07; GitHub Actions has never run on this repo, so it had never been observed.
 LINEAGE_AWK='
-    /^#{2,3}[ ]/ { sec = $0; next }
+    /^##?#? / { sec = $0; next }
     /^\|/ {
         if ( $0 ~ /^\|[ :|-]+\|[ :|-]*$/ ) next
         if ( seen[sec]++ == 0 ) next
@@ -264,7 +278,7 @@ LINEAGE_NAMES_AWK='
             }
         }
     }
-    /^#{2,3}[ ]/ { sec = $0; next }
+    /^##?#? / { sec = $0; next }
     /^\|/ {
         if( $0 ~ /^\|[ :|-]+\|[ :|-]*$/ ) next
         if( seen[ sec ]++ == 0 ) next
