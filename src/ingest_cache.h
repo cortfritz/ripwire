@@ -190,7 +190,11 @@ constexpr std::uint32_t kCacheVersion = 15;           // 15 (offset-table blob):
                                                       //    (Py `pkg.mod`, TS `./x`, Rust `crate::a::b`/`mod:x`) —
                                                       //    a target FORMAT change → old caches must be rejected.
                                                       // 4: Include gained a `bool isAngle` (quote/angle) field
-constexpr std::uint32_t kParserVer    = 77;           // bump on any grammar/.scm/extraction change
+constexpr std::uint32_t kParserVer    = 79;           // bump on any grammar/.scm/extraction change
+                                                      // 78 = 2026-09-06 (Elixir tier): a new vendored grammar
+                                                      //    (tree-sitter-elixir v0.3.5), a new query, two new
+                                                      //    extensions (.ex/.exs) and four new GATED capture
+                                                      //    classes — every axis a cached FileFacts blob keys on.
                                                       // 77 = 2026-09-03 (Phase 5, docs/EVALS.md): two Python
                                                       //    ingest FACTS — (a) a `super()` call receiver classifies
                                                       //    RecvKind::SuperObj (appended) instead of None, so

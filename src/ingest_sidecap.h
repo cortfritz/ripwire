@@ -1617,6 +1617,24 @@ void captureTagsFacts( TSQueryCursor* cursor, const LangEntry& le, std::uint32_t
             // C++/Python/Rust/Go/TS/Swift bodyByte — and therefore their sigEndByte, spans, and node/edge
             // output — are BYTE-for-byte unchanged (a .mm's C++ functions take the C "body"-field path above
             // and never reach here). See test/langcheck.sh c.m and the byte-identical src/ regression gate.
+            // Elixir's body-present signal, for the ObjC reason directly below and with the same
+            // consequence if it is missing: an Elixir def's roleNode is the `(call)` that already SPANS
+            // the whole definition, so no ancestor owns a "body" field and the climb above finds nothing.
+            // bodyByte would stay 0, making every `def` look like a bodyless DECLARATION — which breaks
+            // the same-file decl/def collapse and graph.h's cross-file hasBody, doubling every symbol and
+            // every call edge. The `do_block` child IS the body (`def f, do: expr` has none, and a
+            // one-line keyword-form clause is genuinely bodyless by this measure — a floor, not a bug).
+            if( ts_node_is_null( body ) && le.lang == Lang::Elixir )
+            {
+                const std::uint32_t childCount = ts_node_child_count( defNode );
+                for( std::uint32_t ci = 0; ci < childCount; ++ci )
+                {
+                    const TSNode ch = ts_node_child( defNode, ci );
+                    if( std::strcmp( ts_node_type( ch ), "do_block" ) == 0 )
+                    { body = ch; break; }
+                }
+            }
+
             if( ts_node_is_null( body ) && le.lang == Lang::ObjC )
             {
                 const std::uint32_t childCount = ts_node_child_count( defNode );
@@ -1652,7 +1670,9 @@ void captureTagsFacts( TSQueryCursor* cursor, const LangEntry& le, std::uint32_t
                 const std::uint32_t endRow   = ts_node_end_point( isTestMacroBlock ? body : defNode ).row;   // LB-E: rows through the sibling block
                 d.loc = ( endRow >= startRow ) ? ( endRow - startRow + 1u ) : 1u;
             }
-            d.params    = fnOrMethod ? countParams( defNode ) : std::uint16_t( 0 );
+            // Elixir formals live in the head call's `arguments`, not in any parameter-list node — see
+            // elixirParamCount for why that cannot be folded into cc_isParamList.
+            d.params    = fnOrMethod ? ( le.lang == Lang::Elixir ? elixirParamCount( defNode ) : countParams( defNode ) ) : std::uint16_t( 0 );
             // LB-E: a testmacroblock's parameter surface is the MACRO's business, not visible here — claim
             // inexact so the resolver's arity narrowing never trusts params=0 on a test-title symbol.
             d.arityExact = ( fnOrMethod && !isTestMacroBlock ) ? std::uint8_t( cc_paramArityExact( defNode, le.lang, kind ) ? 1 : 0 ) : std::uint8_t( 0 );   // B2.2
@@ -1708,6 +1728,21 @@ void captureTagsFacts( TSQueryCursor* cursor, const LangEntry& le, std::uint32_t
                     continue;
                 }
 
+                // Elixir: `def greet(n) do … end` IS a `(call target: (identifier))`, so the ordinary
+                // local-call pattern names `def` itself — and `if`/`case`/`with` likewise. Same class of
+                // skip as the cast keyword directly above, same reason it cannot be a query predicate.
+                if( le.lang == Lang::Elixir && elixirNonCallKeyword( nameTxt ) )
+                {
+                    continue;
+                }
+
+                // …and the def's own HEAD is not a call to the thing it defines — see elixirIsDefinitionHead
+                // for the measured phantom edge this removes.
+                if( le.lang == Lang::Elixir && refCapSv == "reference.call" && elixirIsDefinitionHead( roleNode, src ) )
+                {
+                    continue;
+                }
+
                 // using-declaration re-exports (r9 loss bucket 1): @reference.import marks the C++
                 // `using ns::name;` tags pattern. The site becomes a role="import" use-site of the target
                 // (never a call edge — graph.h admits Call+Macro only), and the grammar KEYWORD forms
@@ -1715,6 +1750,13 @@ void captureTagsFacts( TSQueryCursor* cursor, const LangEntry& le, std::uint32_t
                 // query predicate a tags pattern cannot express IS enforceable (see the helper's note).
                 const bool isImportRef = ( refCapSv == "reference.import" );
                 if( isImportRef && usingDeclarationIsDirective( roleNode ) )
+                {
+                    continue;
+                }
+                // Elixir reuses @reference.import for `alias`/`import`/`require`/`use`, whose pattern also
+                // matches `defmodule Foo do` (same call, same first argument — only the do_block differs,
+                // and a query cannot say "no do_block"). Keep the four real directives, drop the rest.
+                if( isImportRef && le.lang == Lang::Elixir && !elixirImportDirectiveKept( roleNode, src ) )
                 {
                     continue;
                 }

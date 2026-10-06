@@ -125,9 +125,12 @@ inline constexpr std::uint32_t langBit( Lang lang ) noexcept { return std::uint3
 // normalized span and manufacture clone matches. (Lua's `--` opener is not modelled here at all; that is
 // a disclosed floor of the clone lens for Lua, in the safe direction — comments count as content, so two
 // bodies must agree on their COMMENTS too before they clone-match, which can only ever miss a clone.)
+// Elixir joins them, and unambiguously: `#` is its ONLY comment opener — there is no block-comment form
+// and no other meaning for the character outside a string, sigil or `?#` char literal, all of which the
+// scanner already reads as single tokens.
 inline constexpr std::uint32_t kHashLineCommentLangMask = langBit( Lang::Python ) | langBit( Lang::Bash ) | langBit( Lang::Ruby ) | langBit( Lang::Toml ) | langBit( Lang::Yaml )
-                                                       | langBit( Lang::Php );
-static_assert( std::uint32_t( Lang::Lua ) < 32, "Lang outgrew a 32-bit mask — widen kHashLineCommentLangMask" );
+                                                       | langBit( Lang::Php ) | langBit( Lang::Elixir );
+static_assert( std::uint32_t( Lang::Elixir ) < 32, "Lang outgrew a 32-bit mask — widen kHashLineCommentLangMask" );
 
 inline bool usesHashLineComments( Lang lang ) noexcept
 {

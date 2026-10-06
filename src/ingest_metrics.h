@@ -1361,6 +1361,70 @@ inline bool cc_isParamList( const char* t ) noexcept
 }
 // a named parameter node (skip `self`/`this`-only? no — count as written, deterministic). Anonymous separators
 // (',', '(', ')') are unnamed → excluded by ts_node_is_named.
+// ELIXIR PARAMETER COUNT, its own function because the generic search above cannot serve it. Elixir has no
+// parameter-list node type at all: a def's formals are the `arguments` of the head CALL, and `arguments` is
+// also what every grammar in cc_isParamList's neighbourhood calls a CALL-SITE argument list — admitting it
+// there would make `f( a, b, c )` in a Python or JS body answer the pre-order search and report a wrong
+// arity for that language. So this walks the exact shape instead of searching for a node kind:
+//
+//   (call target: `def`  (arguments . HEAD …))          HEAD is one of
+//       (call target: (identifier) (arguments …))       ← `def greet(a, b)`      → count those arguments
+//       (binary_operator left: (call …) operator: when) ← `def greet(a) when …`  → count the LEFT call's
+//       (identifier)                                    ← `def default do`       → 0, and truly 0
+//
+// Without it every Elixir def reported params="0", which for `def greet(name)` is not a floor — it is a
+// wrong number, the one direction the honesty rule forbids. `arityExact` stays 0 regardless (Elixir is not
+// in cc_paramArityExact's language gate), so this number is descriptive and never filters a call edge.
+inline std::uint16_t elixirParamCount( TSNode defNode ) noexcept
+{
+    if( ts_node_is_null( defNode ) || std::strcmp( ts_node_type( defNode ), "call" ) != 0 )
+    {
+        return 0;
+    }
+    TSNode outerArgs = TSNode {};
+    const std::uint32_t outerCount = ts_node_named_child_count( defNode );
+    for( std::uint32_t i = 0; i < outerCount; ++i )
+    {
+        const TSNode child = ts_node_named_child( defNode, i );
+        if( std::strcmp( ts_node_type( child ), "arguments" ) == 0 )
+        { outerArgs = child; break; }
+    }
+    if( ts_node_is_null( outerArgs ) || ts_node_named_child_count( outerArgs ) == 0 )
+    {
+        return 0;
+    }
+    TSNode head = ts_node_named_child( outerArgs, 0 );
+    if( std::strcmp( ts_node_type( head ), "binary_operator" ) == 0 )   // a `when` guard wraps the head
+    {
+        head = ts_node_child_by_field_name( head, "left", 4 );
+        if( ts_node_is_null( head ) )
+        {
+            return 0;
+        }
+    }
+    if( std::strcmp( ts_node_type( head ), "call" ) != 0 )
+    {
+        return 0;   // a bare identifier head — a genuinely zero-arity def
+    }
+    const std::uint32_t headCount = ts_node_named_child_count( head );
+    for( std::uint32_t i = 0; i < headCount; ++i )
+    {
+        const TSNode child = ts_node_named_child( head, i );
+        if( std::strcmp( ts_node_type( child ), "arguments" ) == 0 )
+        {
+            std::uint32_t formals = 0;
+            const std::uint32_t n = ts_node_named_child_count( child );
+            for( std::uint32_t j = 0; j < n; ++j )
+            {
+                if( std::strcmp( ts_node_type( ts_node_named_child( child, j ) ), "comment" ) != 0 )
+                { ++formals; }
+            }
+            return std::uint16_t( formals > 65535u ? 65535u : formals );
+        }
+    }
+    return 0;   // `def greet do` written with an empty head call — no arguments node, no formals
+}
+
 inline std::uint16_t countParams( TSNode defNode )   // A4-F25: NOT noexcept — allocates (see cc_walk)
 {
     // bounded pre-order search for the FIRST parameter list inside the def; then count its named children.

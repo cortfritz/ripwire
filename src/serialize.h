@@ -581,6 +581,12 @@ inline constexpr TokenCalib kTokenCalib[] =
                                    // that put Ruby at the dense end of the band, so Lua borrows Ruby's exact
                                    // 2.40 rather than guessing. Recalibrate with Ruby. Same headroom clamp:
                                    // `s.lang==Lua` (19) never reaches contentBytesByLang[13].
+    { Lang::Elixir,     2.40 },   // REASONED, not measured — Elixir's convention is snake_case functions and
+                                   // short module segments (`Repo.Greeter` emits as `Greeter`), the same dense
+                                   // identifier shape that put Ruby and Lua at 2.40, and Elixir's own community
+                                   // style guide mandates it. Borrows that rate rather than guessing a new one;
+                                   // recalibrate with Ruby/Lua. Same headroom clamp: `s.lang==Elixir` (20) never
+                                   // reaches contentBytesByLang[13].
 };
 inline constexpr double kBytesPerTokenDefault = 2.50;   // Unknown-language / empty-map fallback (mid-band)
 

@@ -242,6 +242,7 @@ set(_ripwire_query_names
   c
   cpp
   csharp
+  elixir
   go
   java
   javascript
@@ -455,6 +456,14 @@ add_ts_grammar(cuda   https://github.com/tree-sitter-grammars/tree-sitter-cuda.g
 # serialize (unlike toml's stateless one), but through create/destroy/serialize callbacks the core
 # owns — no new leak surface, and the G1 leg is run with the existing suppressions unchanged.
 add_ts_grammar(lua    https://github.com/tree-sitter-grammars/tree-sitter-lua.git 10fe0054734eec83049514ea2e718b2a56acd0c9)  # v0.5.0
+# Elixir (.ex/.exs): elixir-lang/tree-sitter-elixir — the grammar the Elixir core team itself
+# maintains, so there is no tree-sitter-grammars/ fork question to settle. v0.3.5 → ABI 14, in
+# [MIN_COMPATIBLE, LANGUAGE_VERSION]=[13,15] for core v0.26.9, read out of the tagged parser.c rather
+# than taken on faith. Ships a scanner.c which the macro picks up; it is STATELESS (create returns
+# NULL, serialize/deserialize are no-ops, destroy frees nothing — verified by reading it, not assumed),
+# so unlike lua's it adds no allocation surface at all and the G1 leg runs with the existing
+# suppressions unchanged. The tag is lightweight, so the SHA below IS the tagged commit.
+add_ts_grammar(elixir https://github.com/elixir-lang/tree-sitter-elixir.git   e2d9e6e0e76b0c436fa48a0b8c32a031d0cbdf49)  # v0.3.5
 
 # PHP (.php): the official tree-sitter org grammar. Like TypeScript this repo hosts TWO sub-grammars
 # in subdirectories — `php/` (the full one: HTML text interleaved with `<?php … ?>` blocks) and
@@ -515,6 +524,7 @@ set(RIPWIRE_TS_OBJECTS
   $<TARGET_OBJECTS:ts_ruby>
   $<TARGET_OBJECTS:ts_json>
   $<TARGET_OBJECTS:ts_lua>
+  $<TARGET_OBJECTS:ts_elixir>
   $<TARGET_OBJECTS:ts_php>
   $<TARGET_OBJECTS:ts_toml>
   $<TARGET_OBJECTS:ts_yaml>
@@ -711,7 +721,7 @@ endif()
 set(RIPWIRE_GRAMMAR_TARGETS
   ts_cpp ts_python ts_go ts_rust ts_tsts ts_tstsx ts_swift ts_objc
   ts_javascript ts_bash ts_java ts_ruby ts_json ts_toml ts_yaml ts_csharp ts_c ts_cuda ts_markdown
-  ts_php ts_lua)
+  ts_php ts_lua ts_elixir)
 set(RIPWIRE_RUNTIME_COMPILE_TARGETS ripwire_probe ripwire tree-sitter ${RIPWIRE_GRAMMAR_TARGETS})
 set(RIPWIRE_RUNTIME_LINK_TARGETS ripwire_probe ripwire)
 # The C++ subset of the compile list — the only targets that include a C++ standard library at all, and so
@@ -931,5 +941,6 @@ if(RIPWIRE_FUZZ)
   add_ripwire_fuzzer(c          tree_sitter_c          c)
   add_ripwire_fuzzer(php        tree_sitter_php        php)
   add_ripwire_fuzzer(lua        tree_sitter_lua        lua)
+  add_ripwire_fuzzer(elixir     tree_sitter_elixir     elixir)
   add_custom_target(ripwire_fuzzers DEPENDS ${RIPWIRE_FUZZ_TARGETS})
 endif()
